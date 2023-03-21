@@ -1,67 +1,54 @@
-from io import BytesIO
+from django.db.models import Q
+from django.http import Http404
 
-from PIL import Image
-from django.core.files import File
-from django.shortcuts import render
-from django.db import models
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
 
-# Create your views here.
-
-class Category (models.Model):
-    name = models.CharField(max_length=255)
-    sluq = models.SlugField()
-
-    class Meta:
-        ordering = ['name',]
-
-    def __str__(self):
-        return self.name
-
-    def get_absolute_url(self):
-        return f'/{self.sluq}/'
-
-class Product (models.Model):
-    category = models.ForeignKey(Category, related_name='products', on_delete=models.CASCADE)
-    name = models.CharField(max_length=255)
-    sluq = models.SlugField()
-    description = models.TextField(blank=True, null=True)
-    price = models.DecimalField(max_digits=6, decimal_places=2)
-    image = models.ImageField(upload_to='uploads/', blank=True, null=True)
-    thumbnail = models.ImageField(upload_to='uploads/', blank=True, null=True)
-    date_added = models.DateTimeField(auto_now_add=True)
+from .models import Product, Category
+from .serializers import ProductSerializer, CategorySerializer
 
 
-    class Meta:
-        ordering = ['-date_added',]
+class LatestProductsList(APIView):
+    def get(self, request, format=None):
+        products = Product.objects.all()[0:4]
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
 
-    def __str__(self):
-        return self.name
 
-    def get_absolute_url(self):
-        return f'/{self.category.sluq}/{self.sluq}/'
+class ProductDetail(APIView):
+    def get_object(self, category_slug, product_slug):
+        try:
+            return Product.objects.filter(category__slug=category_slug).get(slug=product_slug)
+        except Product.DoesNotExist:
+            raise Http404
 
-    def get_image(self):
-        if self.image:
-            return 'http://127.0.0.1:8000' + self.image.url
-        return ''
+    def get(self, request, category_slug, product_slug, format=None):
+        product = self.get_object(category_slug, product_slug)
+        serializer = ProductSerializer(product)
+        return Response(serializer.data)
 
-    def get_thumbnail(self):
-        if self.image:
-            return 'http://127.0.0.1:8000' + self.thumbnail.url
-        else:
-            if self.image:
-                self.thumbnail = self.make_thumbnail(self.image)
-                self.save()
 
-                return 'http://127.0.0.1:8000' + self.thumbnail.url
-            else:
-                return ''
+class CategoryDetail(APIView):
+    def get_object(self, category_slug):
+        try:
+            return Category.objects.get(slug=category_slug)
+        except Category.DoesNotExist:
+            raise Http404
 
-    def make_thumbnail(self, image, size=(300, 200)):
-        img = Image.open(image)
-        img.convert('RGB')
-        img.thumbnail(size)
-        thumb_io = BytesIO()
-        img.save(thumb_io, 'JPEG', quality=85)
-        thumbnail = File(thumb_io, name=image.name)
-        return thumbnail
+    def get(self, request, category_slug, format=None):
+        category = self.get_object(category_slug)
+        serializer = CategorySerializer(category)
+        return Response(serializer.data)
+
+
+@api_view(['POST'])
+def search(request):
+    query = request.data.get('query', '')
+
+    if query:
+        products = Product.objects.filter(Q(name__icontains=query) | Q(description__icontains=query))
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+    else:
+        return Response({"products": []})
