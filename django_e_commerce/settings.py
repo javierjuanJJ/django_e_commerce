@@ -43,10 +43,12 @@ INSTALLED_APPS = [
     'corsheaders',
     'djoser',
     'product',
+    'order'
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",
+    # "http://localhost:8080",
+    "http://localhost:5173",
 ]
 
 MIDDLEWARE = [
